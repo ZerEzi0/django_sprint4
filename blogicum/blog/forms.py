@@ -1,5 +1,4 @@
 from django import forms
-from django.contrib.auth.forms import UserChangeForm as DjangoUserChangeForm
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
@@ -8,12 +7,15 @@ from .models import Comment, Post
 User = get_user_model()
 
 
-class CustomUserChangeForm(DjangoUserChangeForm):
-    password = None
+class CustomUserChangeForm(forms.ModelForm):
+    """
+    Форма для изменения профиля пользователя.
+    Включает поля: username, first_name, last_name, email.
+    """
 
     class Meta:
         model = User
-        fields = ('first_name', 'last_name', 'email')
+        fields = ('username', 'first_name', 'last_name', 'email')
 
 
 class PostForm(forms.ModelForm):
@@ -32,6 +34,12 @@ class PostForm(forms.ModelForm):
 
 
 class CommentForm(forms.ModelForm):
+    text = forms.CharField(
+        label='Текст комментария',
+        widget=forms.Textarea(attrs={'rows': 4, 'cols': 40}),
+        help_text='Введите ваш комментарий здесь.'
+    )
+
     class Meta:
         model = Comment
-        exclude = ('author', 'post')
+        fields = ('text',)

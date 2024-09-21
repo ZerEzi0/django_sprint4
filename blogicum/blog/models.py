@@ -3,38 +3,42 @@ from django.db import models
 from django.db.models import Count
 from django.utils import timezone
 
+from core.models import CreatedAt, IsPublished
+
 LENGTH_STRING = 20
 MAX_LENGTH = 256
 
 User = get_user_model()
 
 
-class CreatedAt(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        abstract = True
-
-
-class IsPublished(models.Model):
-    is_published = models.BooleanField(default=True)
-
-    class Meta:
-        abstract = True
-
-
 class PublishedQuerySet(models.QuerySet):
-    def filter_posts_for_publication(self):
-        return self.filter(
-            pub_date__lte=timezone.now(),
-            is_published=True,
-            category__is_published=True,
-        )
+    def optimized_filter(self, apply_filters=False, apply_annotations=False):
+        """
+        Оптимизированный метод для получения постов
+        с учетом фильтров и аннотаций.
 
-    def count_comments(self):
-        return self.select_related('category', 'location', 'author').annotate(
-            comment_count=Count('comments')
-        ).order_by('-pub_date')
+        :param apply_filters:
+        Если True, применяются фильтры для публикации.
+        :param apply_annotations:
+        Если True, применяются аннотации и сортировка.
+        :return:
+        Отфильтрованный и/или аннотированный QuerySet.
+        """
+        queryset = self.select_related('category', 'location', 'author')
+
+        if apply_filters:
+            queryset = queryset.filter(
+                pub_date__lte=timezone.now(),
+                is_published=True,
+                category__is_published=True,
+            )
+
+        if apply_annotations:
+            queryset = queryset.annotate(
+                comment_count=Count('comments')
+            ).order_by('-pub_date')
+
+        return queryset
 
 
 class Category(CreatedAt, IsPublished):
@@ -43,8 +47,8 @@ class Category(CreatedAt, IsPublished):
     slug = models.SlugField(
         'Идентификатор',
         unique=True,
-        help_text='Идентификатор страницы для URL;\
-        разрешены символы латиницы, цифры, дефис и подчёркивание.'
+        help_text='Идентификатор страницы для URL; \
+            разрешены символы латиницы, цифры, дефис и подчёркивание.'
     )
 
     class Meta:
@@ -71,8 +75,8 @@ class Post(CreatedAt, IsPublished):
     text = models.TextField('Текст')
     pub_date = models.DateTimeField(
         'Дата и время публикации',
-        help_text='Если установить дату и время в будущем — можно \
-            делать отложенные публикации.'
+        help_text='Если установить дату и время в будущем \
+             — можно делать отложенные публикации.'
     )
     author = models.ForeignKey(
         User,
