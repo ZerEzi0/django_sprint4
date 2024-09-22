@@ -1,11 +1,17 @@
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.http import Http404  # Для выброса исключения Http404
+from django.utils import timezone  # Для работы с временем
+
 from django.contrib.auth import get_user_model
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
-from django.views.generic import CreateView, ListView, UpdateView
-from django.views.generic import DeleteView, DetailView
-from django.http import Http404
-from django.utils import timezone
+from django.views.generic import (
+    CreateView,
+    ListView,
+    UpdateView,
+    DeleteView,
+    DetailView
+)
 
 from .forms import CommentForm, PostForm, CustomUserChangeForm
 from .models import Category, Comment, Post
@@ -50,11 +56,9 @@ class IndexListView(ListView):
     context_object_name = 'posts'
 
     def get_queryset(self):
-        return (
-            Post.objects.optimized_filter(
-                apply_filters=True,
-                apply_annotations=True
-            )
+        return Post.objects.optimized_filter(
+            apply_filters=True,
+            apply_annotations=True
         )
 
 
@@ -62,19 +66,18 @@ class PostDetailView(DetailView):
     model = Post
     template_name = 'blog/detail.html'
     context_object_name = 'post'
-    queryset = Post.objects.select_related('author', 'category')
+    queryset = Post.objects.select_related('author', 'category', 'location')
     pk_url_kwarg = 'post_id'
 
     def get_object(self, queryset=None):
         post = super().get_object(queryset)
 
-        if self.request.user != post.author:
-            if not post.is_published:
-                raise Http404("Пост не найден")
-            if post.category and not post.category.is_published:
-                raise Http404("Пост не найден")
-            if post.pub_date > timezone.now():
-                raise Http404("Пост не найден")
+        if self.request.user != post.author and (
+            not post.is_published
+            or (post.category and not post.category.is_published)
+            or post.pub_date > timezone.now()
+        ):
+            raise Http404("Пост не найден")
 
         return post
 
@@ -133,13 +136,7 @@ class CommentCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.author = self.request.user
-        form.instance.post = get_object_or_404(
-            Post.objects.optimized_filter(
-                apply_filters=True,
-                apply_annotations=True
-            ),
-            pk=self.kwargs['post_id']
-        )
+        form.instance.post = get_object_or_404(Post, pk=self.kwargs['post_id'])
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -157,7 +154,7 @@ class CommentUpdateView(LoginRequiredMixin, CommentAuthorMixin, UpdateView):
 
     def get_object(self, queryset=None):
         return get_object_or_404(
-            Comment.objects.select_related('post'),
+            Comment,
             pk=self.kwargs['comment_id'],
             post__id=self.kwargs['post_id']
         )
@@ -176,7 +173,7 @@ class CommentDeleteView(LoginRequiredMixin, CommentAuthorMixin, DeleteView):
 
     def get_object(self, queryset=None):
         return get_object_or_404(
-            Comment.objects.select_related('post'),
+            Comment,
             pk=self.kwargs['comment_id'],
             post__id=self.kwargs['post_id']
         )
@@ -224,17 +221,11 @@ class ProfileView(ListView):
 
     def get_queryset(self):
         author = self.get_profile()
-        if author == self.request.user:
-            queryset = Post.objects.optimized_filter(
-                apply_filters=False,
-                apply_annotations=True
-            ).filter(author=author)
-        else:
-            queryset = Post.objects.optimized_filter(
-                apply_filters=True,
-                apply_annotations=True
-            ).filter(author=author)
-        return queryset
+        apply_filters = author != self.request.user
+        return Post.objects.optimized_filter(
+            apply_filters=apply_filters,
+            apply_annotations=True
+        ).filter(author=author)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -261,9 +252,7 @@ class PostListView(ListView):
     template_name = 'blog/index.html'
     paginate_by = NUMBER_OF_POSTS
     context_object_name = 'posts'
-
-    def get_queryset(self):
-        return Post.objects.optimized_filter(
-            apply_filters=True,
-            apply_annotations=True
-        )
+    queryset = Post.objects.optimized_filter(
+        apply_filters=True,
+        apply_annotations=True
+    )
